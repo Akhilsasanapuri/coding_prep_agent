@@ -31,13 +31,34 @@ def test_weak_and_plan():
     main.put_profile(main.Profile(weak_areas="graphs, trees", daily_minutes=90), uid)
     w = main.weak_topics(uid)
     assert w[0] == "graphs" and w[1] == "trees"  # declared first
-    main.add_problem(main.ProblemIn(title="p", tags="arrays"), uid)
-    assert "arrays" not in main.weak_topics(uid)  # solved topic drops out of uncovered
+    # solving many 'arrays' pushes it down the ranking (adaptive), not removed
+    for _ in range(5):
+        main.add_problem(main.ProblemIn(title="p", tags="arrays"), uid)
+    ranked = main.weak_topics(uid)
+    non_declared = [t for t in ranked if t not in ("graphs", "trees")]
+    assert non_declared[-1] == "arrays"  # most-practiced ranks last
     ids = main.generate_plan(uid)
     assert len(ids) > 0
     tasks = main.list_tasks(uid)
     assert any(t["category"] == "DSA" for t in tasks)
-    assert any("graphs" in t["title"] for t in tasks)  # weakest topic scheduled
+    assert any("graphs" in t["title"].lower() for t in tasks)  # weakest topic scheduled
+    assert any("solve a" in t["title"] for t in tasks)  # tasks name a concrete pattern
+    # tasks/day scales with commitment: 90 min -> 3/day
+    from collections import Counter
+    by_day = Counter(t["due_date"] for t in tasks)
+    assert max(by_day.values()) <= 4 and any(v >= 3 for v in by_day.values())
+    # regenerate replaces the prior plan, does not stack
+    n = len(main.list_tasks(uid))
+    main.generate_plan(uid)
+    assert len(main.list_tasks(uid)) == n
+
+def test_plan_scales_with_commitment():
+    uid = signup("f@x.com")
+    main.put_profile(main.Profile(daily_minutes=30, interview_date=None), uid)
+    main.generate_plan(uid)
+    from collections import Counter
+    low = Counter(t["due_date"] for t in main.list_tasks(uid))
+    assert max(low.values()) <= 2  # 30 min -> ~1 task/day (+occasional revision)
 
 def test_plan_respects_interview_date():
     import datetime as dt

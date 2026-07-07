@@ -181,22 +181,67 @@ def list_problems(uid: int = Depends(current_user)):
     return [dict(r) for r in rows]
 
 # ---------------------------------------------------------------- planner (rule-based)
-DSA_TOPICS = ["arrays", "strings", "hashing", "two pointers", "binary search",
-              "linked list", "stacks", "recursion", "trees", "graphs", "dp", "greedy"]
+# topic -> concrete patterns, so tasks name a real thing to solve (not "do graphs")
+TOPIC_PATTERNS = {
+    "arrays": ["two-sum via hash map", "sliding window max/min", "prefix sums", "Kadane's max subarray", "Dutch-flag partition"],
+    "strings": ["anagram groups (freq map)", "longest palindromic substring", "min-window substring", "string-to-int parsing"],
+    "hashing": ["subarray sum = k", "longest consecutive sequence", "group by key", "first unique char"],
+    "two pointers": ["3-sum", "container with most water", "remove duplicates in place", "trapping rain water"],
+    "binary search": ["first/last occurrence", "search in rotated array", "median of two arrays", "binary search on the answer"],
+    "linked list": ["reverse a list", "detect cycle (Floyd)", "merge k sorted lists", "remove nth from end"],
+    "stacks": ["valid parentheses", "next greater element", "min stack", "largest rectangle in histogram"],
+    "recursion": ["subsets", "permutations", "combination sum", "N-queens"],
+    "trees": ["level-order traversal", "lowest common ancestor", "validate BST", "diameter of tree", "serialize/deserialize"],
+    "graphs": ["BFS shortest path", "DFS connected components", "topological sort", "Dijkstra", "Union-Find / DSU"],
+    "dp": ["0/1 knapsack", "longest common subsequence", "coin change", "longest increasing subsequence", "edit distance"],
+    "greedy": ["interval scheduling", "jump game", "gas station", "task scheduler"],
+}
+DSA_TOPICS = list(TOPIC_PATTERNS.keys())
+CS_TOPICS = [
+    "OS: processes vs threads, scheduling, deadlock",
+    "DBMS: normalization, indexing, transactions & ACID",
+    "CN: TCP vs UDP, HTTP, DNS, the TLS handshake",
+    "OOP: SOLID, composition vs inheritance, common patterns",
+    "System design: caching, load balancing, DB sharding",
+]
+BEHAVIORAL = [
+    "STAR: a project you're proud of",
+    "STAR: a conflict you resolved on a team",
+    "STAR: a failure and what you learned",
+    "STAR: a time you took ownership / led",
+    "'Tell me about yourself' — a 2-minute pitch",
+]
+MOCK_TYPES = ["DSA", "behavioral", "project", "system design basics"]
+
 
 def weak_topics(uid: int) -> list[str]:
-    """Weak = declared weak_areas, plus DSA topics with no solved problems."""
+    """Adaptive ranking: declared weak first, then DSA topics by fewest solved
+    problems (least-practiced = weakest). Shifts as the user logs problems."""
     with db() as con:
         prof = con.execute("SELECT weak_areas FROM profiles WHERE user_id=?", (uid,)).fetchone()
         solved_tags = con.execute(
             "SELECT tags FROM problems WHERE user_id=? AND status='solved'", (uid,)).fetchall()
-    covered = set()
+    counts = {t: 0 for t in DSA_TOPICS}
     for r in solved_tags:
-        covered |= {t.strip() for t in (r["tags"] or "").split(",") if t.strip()}
+        for t in (r["tags"] or "").split(","):
+            t = t.strip()
+            if t in counts:
+                counts[t] += 1
     declared = [w.strip().lower() for w in (prof["weak_areas"] if prof else "").split(",") if w.strip()]
-    uncovered = [t for t in DSA_TOPICS if t not in covered]
-    # declared first (user knows best), then uncovered topics, de-duped, order-preserving
-    return list(dict.fromkeys(declared + uncovered))
+    ranked = sorted(DSA_TOPICS, key=lambda t: counts[t])  # fewest solved first
+    return list(dict.fromkeys(declared + ranked))
+
+def _weakest_mock_type(uid: int) -> str:
+    """Mock type with the lowest average score (untried types win first)."""
+    with db() as con:
+        rows = con.execute(
+            "SELECT type, AVG(score) a, COUNT(*) c FROM mock_sessions WHERE user_id=? GROUP BY type",
+            (uid,)).fetchall()
+    avg = {r["type"]: r["a"] for r in rows if r["a"] is not None}
+    untried = [t for t in MOCK_TYPES if t not in avg]
+    if untried:
+        return untried[0]
+    return min(avg, key=avg.get)
 
 def generate_plan(uid: int) -> list[dict]:
     with db() as con:
@@ -204,7 +249,6 @@ def generate_plan(uid: int) -> list[dict]:
     if not prof:
         raise HTTPException(400, "create a profile first")
     weak = weak_topics(uid)
-    # days until interview (default 14), backwards plan from today
     days = 14
     if prof["interview_date"]:
         try:
@@ -212,21 +256,42 @@ def generate_plan(uid: int) -> list[dict]:
             days = max(1, min(d, 30))
         except ValueError:
             pass
-    tasks = []
-    today = dt.date.today()
-    for i in range(days):
-        due = (today + dt.timedelta(days=i)).isoformat()
-        topic = weak[i % len(weak)] if weak else "arrays"
-        tasks.append(("DSA", f"Solve 2-3 {topic} problems", "high" if i < days // 2 else "medium", due))
-        if i % 2 == 0:
-            tasks.append(("CS", f"Revise CS topic: {['OS','DBMS','CN','OOPS'][i//2 % 4]}", "medium", due))
-        if i % 3 == 0:
-            tasks.append(("Behavioral", "Prepare 1 STAR story", "low", due))
-        if i % 4 == 3:
-            tasks.append(("Mock", f"Take a {['DSA','behavioral','project'][i % 3]} mock", "high", due))
+    # tasks/day scale with the user's stated commitment (~30 min per task), 1..4
+    per_day = max(1, min((prof["daily_minutes"] or 60) // 30, 4))
+    # concrete DSA queue: each weak topic expanded into its named patterns
+    dsa_queue = [(topic, pat) for topic in weak for pat in TOPIC_PATTERNS.get(topic, [f"core {topic}"])]
+    mock_type = _weakest_mock_type(uid)
+
+    tasks, today, dsa_i = [], dt.date.today(), 0
+    for d in range(days):
+        due = (today + dt.timedelta(days=d)).isoformat()
+        back_half = d >= days * 0.5
+        slots = per_day
+        # mocks: back half only, escalating toward the interview, weakest type first
+        if back_half and d % 2 == days % 2 and slots > 0:
+            tasks.append(("Mock", f"Timed mock: {mock_type}", "high", due)); slots -= 1
+            mock_type = MOCK_TYPES[(MOCK_TYPES.index(mock_type) + 1) % len(MOCK_TYPES)]
+        # one CS topic every other day (front-loaded learning)
+        if d % 2 == 0 and slots > 0:
+            tasks.append(("CS", "Revise " + CS_TOPICS[(d // 2) % len(CS_TOPICS)], "medium", due)); slots -= 1
+        # one behavioral prompt every third day
+        if d % 3 == 2 and slots > 0:
+            tasks.append(("Behavioral", BEHAVIORAL[(d // 3) % len(BEHAVIORAL)], "low", due)); slots -= 1
+        # fill remaining slots with concrete, non-repeating DSA patterns
+        while slots > 0 and dsa_queue:
+            topic, pat = dsa_queue[dsa_i % len(dsa_queue)]; dsa_i += 1; slots -= 1
+            tasks.append(("DSA", f"{topic.title()} - solve a '{pat}' problem",
+                          "high" if not back_half else "medium", due))
+        # spaced revision: in the back third, re-do an earlier pattern from memory
+        if back_half and dsa_i > 4 and d % 3 == 0:
+            topic, pat = dsa_queue[(dsa_i - 4) % len(dsa_queue)]
+            tasks.append(("Revision", f"Redo '{pat}' ({topic}) from memory, no hints", "medium", due))
+
     now = dt.datetime.utcnow().isoformat()
     ids = []
     with db() as con:
+        # regenerate replaces the prior planner plan instead of stacking on it
+        con.execute("DELETE FROM tasks WHERE user_id=? AND source_agent='planner'", (uid,))
         for cat, title, prio, due in tasks:
             cur = con.execute("""INSERT INTO tasks(user_id,title,category,priority,due_date,
                 source_agent,created_at) VALUES(?,?,?,?,?,?,?)""",

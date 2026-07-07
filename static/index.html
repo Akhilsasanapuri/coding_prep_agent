@@ -26,6 +26,16 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;bord
 .msg{padding:8px 12px;border-radius:10px;margin:6px 0;max-width:80%}
 .me{background:var(--blue);color:#fff;margin-left:auto}.bot{background:#f1f5f9}
 .hidden{display:none}.empty{color:var(--muted);text-align:center;padding:20px}
+.dayhdr{font-weight:600;font-size:13px;color:var(--muted);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.03em}
+.dayhdr small{color:#cbd5e1;font-weight:500}
+.taskrow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--line)}
+.taskrow.tdone{opacity:.5}.taskrow.tdone .ttitle{text-decoration:line-through}
+.ttitle{flex:1;font-size:14px}
+.pdot{width:8px;height:8px;border-radius:50%;flex:none}
+.cbadge{color:#fff;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:600;flex:none}
+button.ghost.sm{padding:3px 10px;font-size:12px}
+.progtrack{background:var(--line);border-radius:8px;height:8px;overflow:hidden}
+.progfill{background:var(--green);height:100%;width:0;transition:width .3s}
 </style>
 </head>
 <body>
@@ -61,7 +71,12 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;bord
       <div class="card"><div>Today</div><div class="big" id="tCount">–</div><div class="empty">tasks pending</div>
         <button class="primary" onclick="genPlan()" style="margin-top:8px">Generate Plan</button></div>
     </div>
-    <div class="card"><h3>Your plan</h3><div id="taskList"></div></div>
+    <div class="card"><h3>Your plan</h3>
+      <div id="progWrap" style="display:none;margin-bottom:12px">
+        <div class="progtrack"><div id="progBar" class="progfill"></div></div>
+        <small id="progLbl" class="empty" style="padding:0"></small>
+      </div>
+      <div id="taskList"></div></div>
   </section>
 
   <!-- PROFILE -->
@@ -166,12 +181,34 @@ async function loadDash(){
     const tasks = await api("/tasks");
     const pending = tasks.filter(t=>t.status==="pending");
     $("#tCount").textContent = pending.length;
-    $("#taskList").innerHTML = tasks.length? tasks.map(t=>`
-      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee">
-        <span class="${t.status==='done'?'done':''}"><span class="tag">${t.category}</span> ${t.title}
-          <small style="color:#94a3b8">${t.due_date}</small></span>
-        <span>${t.status==='done'?'✓':`<button class="ghost" onclick="markDone(${t.id})">Done</button>`}</span>
-      </div>`).join("") : '<div class="empty">Tell the agent your target role and interview timeline, then generate a plan.</div>';
+    // completion progress bar
+    const pct = tasks.length ? Math.round(100*(tasks.length-pending.length)/tasks.length) : 0;
+    $("#progWrap").style.display = tasks.length ? "block" : "none";
+    $("#progBar").style.width = pct+"%";
+    $("#progLbl").textContent = `${tasks.length-pending.length}/${tasks.length} done (${pct}%)`;
+    if(!tasks.length){
+      $("#taskList").innerHTML = '<div class="empty">Tell the agent your target role and interview timeline, then generate a plan.</div>';
+      return;
+    }
+    // group by due date, friendly headers, category badge + priority dot
+    const byDay = {};
+    tasks.forEach(t=>(byDay[t.due_date]=byDay[t.due_date]||[]).push(t));
+    const catColor = {DSA:"#2563eb",CS:"#7c3aed",Behavioral:"#0891b2",Mock:"#dc2626",Revision:"#d97706"};
+    const prioDot = {high:"#dc2626",medium:"#d97706",low:"#16a34a"};
+    const fmtDay = d=>{ const days=Math.round((new Date(d)-new Date(new Date().toDateString()))/864e5);
+      return days===0?"Today":days===1?"Tomorrow":new Date(d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}); };
+    $("#taskList").innerHTML = Object.keys(byDay).sort().map(day=>{
+      const items = byDay[day];
+      const done = items.filter(t=>t.status==='done').length;
+      return `<div class="dayhdr">${fmtDay(day)} <small>${done}/${items.length}</small></div>`+
+        items.map(t=>`
+        <div class="taskrow ${t.status==='done'?'tdone':''}">
+          <span class="pdot" style="background:${prioDot[t.priority]||'#94a3b8'}"></span>
+          <span class="cbadge" style="background:${catColor[t.category]||'#64748b'}">${t.category}</span>
+          <span class="ttitle">${t.title}</span>
+          ${t.status==='done'?'<span class="done">✓</span>':`<button class="ghost sm" onclick="markDone(${t.id})">Done</button>`}
+        </div>`).join("");
+    }).join("");
   }catch(e){ if(e.message.includes("token")) logout(); }
 }
 async function markDone(id){ await api("/tasks/"+id,"PATCH",{status:"done"}); loadDash(); }
