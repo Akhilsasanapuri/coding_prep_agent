@@ -314,10 +314,26 @@ def list_tasks(uid: int = Depends(current_user)):
 @app.patch("/api/tasks/{task_id}")
 def patch_task(task_id: int, patch: TaskPatch, uid: int = Depends(current_user)):
     with db() as con:
-        cur = con.execute("UPDATE tasks SET status=? WHERE id=? AND user_id=?",
-                          (patch.status, task_id, uid))
-        if cur.rowcount == 0:
+        row = con.execute("SELECT category,title,status FROM tasks WHERE id=? AND user_id=?",
+                          (task_id, uid)).fetchone()
+        if not row:
             raise HTTPException(404, "task not found")
+        con.execute("UPDATE tasks SET status=? WHERE id=? AND user_id=?",
+                    (patch.status, task_id, uid))
+        # completing a DSA task logs it as a solved problem, so the tracker and the
+        # weak-topic ranking stay in sync with what the user actually finished
+        if patch.status == "done" and row["status"] != "done" and row["category"] == "DSA":
+            topic = row["title"].split(" - ", 1)[0]
+            parts = row["title"].split("'")
+            ptitle = f"{topic}: {parts[1]}" if len(parts) >= 2 else row["title"]
+            exists = con.execute("SELECT 1 FROM problems WHERE user_id=? AND title=?",
+                                 (uid, ptitle)).fetchone()
+            if not exists:
+                now = dt.datetime.utcnow().isoformat()
+                con.execute("""INSERT INTO problems(user_id,title,platform,url,difficulty,tags,
+                    status,notes,last_revised_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (uid, ptitle, "LeetCode", "", "Medium", topic.lower(), "solved",
+                     "auto-added from plan", now, now))
     return {"ok": True}
 
 # ---------------------------------------------------------------- readiness

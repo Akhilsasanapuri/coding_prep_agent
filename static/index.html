@@ -211,7 +211,10 @@ async function loadDash(){
     }).join("");
   }catch(e){ if(e.message.includes("token")) logout(); }
 }
-async function markDone(id){ await api("/tasks/"+id,"PATCH",{status:"done"}); loadDash(); }
+async function markDone(id){
+  try{ await api("/tasks/"+id,"PATCH",{status:"done"}); await loadDash(); }
+  catch(e){ alert("Could not mark done: "+e.message); }
+}
 async function genPlan(){ try{ await api("/plans/generate","POST",{}); loadDash(); }
   catch(e){ alert(e.message); } }
 

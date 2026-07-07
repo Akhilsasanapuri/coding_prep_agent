@@ -93,6 +93,26 @@ def test_chat_routing():
     assert main.agent_chat(main.ChatIn(message="make a plan"), uid)["createdTaskIds"]
     assert "dp" in main.agent_chat(main.ChatIn(message="what am I weak in"), uid)["answer"]
 
+def test_done_dsa_task_logs_problem():
+    uid = signup("g@x.com")
+    main.put_profile(main.Profile(weak_areas="graphs", daily_minutes=60), uid)
+    main.generate_plan(uid)
+    dsa = next(t for t in main.list_tasks(uid) if t["category"] == "DSA")
+    before = len(main.list_problems(uid))
+    main.patch_task(dsa["id"], main.TaskPatch(status="done"), uid)
+    probs = main.list_problems(uid)
+    assert len(probs) == before + 1
+    added = probs[0]
+    assert added["status"] == "solved" and ":" in added["title"]
+    # idempotent: marking done again does not duplicate
+    main.patch_task(dsa["id"], main.TaskPatch(status="done"), uid)
+    assert len(main.list_problems(uid)) == before + 1
+    # non-DSA task does not create a problem
+    cs = next(t for t in main.list_tasks(uid) if t["category"] == "CS")
+    n = len(main.list_problems(uid))
+    main.patch_task(cs["id"], main.TaskPatch(status="done"), uid)
+    assert len(main.list_problems(uid)) == n
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
