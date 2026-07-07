@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coding Prep Agent</title>
+<style>
+:root{--blue:#2563eb;--green:#16a34a;--amber:#d97706;--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--ink:#0f172a;--muted:#64748b}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--blue);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}
+nav{display:flex;gap:6px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav button{border:1px solid var(--line);background:#fff;padding:6px 12px;border-radius:8px;cursor:pointer}
+nav button.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+main{max-width:960px;margin:0 auto;padding:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.big{font-size:34px;font-weight:700;color:var(--blue)}
+label{display:block;font-size:13px;color:var(--muted);margin-top:8px}
+input,select,textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit}
+button.primary{background:var(--blue);color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer}
+button.ghost{background:#fff;border:1px solid var(--line);padding:6px 12px;border-radius:8px;cursor:pointer;margin:2px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;border-bottom:1px solid var(--line);font-size:14px}
+.tag{display:inline-block;background:#eef2ff;color:var(--blue);border-radius:6px;padding:1px 7px;font-size:12px;margin:1px}
+.done{color:var(--green)}.risk{color:var(--amber)}
+.chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:4px 12px;cursor:pointer;margin:3px;font-size:13px}
+.msg{padding:8px 12px;border-radius:10px;margin:6px 0;max-width:80%}
+.me{background:var(--blue);color:#fff;margin-left:auto}.bot{background:#f1f5f9}
+.hidden{display:none}.empty{color:var(--muted);text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<header><h1>🎯 Coding Prep Agent</h1><button class="ghost" id="logoutBtn" onclick="logout()" style="display:none">Logout</button></header>
+
+<!-- AUTH -->
+<main id="authView">
+  <div class="card" style="max-width:380px;margin:40px auto">
+    <h2 id="authTitle">Sign in</h2>
+    <label>Email</label><input id="email" type="email">
+    <label>Password</label><input id="password" type="password">
+    <label id="nameL">Name</label><input id="name">
+    <div style="margin-top:14px"><button class="primary" onclick="doAuth()" id="authBtn">Sign in</button>
+    <button class="ghost" onclick="toggleAuth()" id="toggleBtn">Need an account? Sign up</button></div>
+    <p id="authErr" class="risk"></p>
+  </div>
+</main>
+
+<div id="app" class="hidden">
+<nav>
+  <button data-tab="dash" class="active" onclick="tab('dash')">Dashboard</button>
+  <button data-tab="profile" onclick="tab('profile')">Profile</button>
+  <button data-tab="dsa" onclick="tab('dsa')">DSA Tracker</button>
+  <button data-tab="mock" onclick="tab('mock')">Mock</button>
+  <button data-tab="chat" onclick="tab('chat')">Agent</button>
+</nav>
+<main>
+  <!-- DASHBOARD -->
+  <section id="dash">
+    <div class="grid">
+      <div class="card"><div>Readiness</div><div class="big" id="rScore">–</div><div id="rDetail" class="empty"></div></div>
+      <div class="card"><div>Weak topics</div><div id="rWeak" style="margin-top:8px"></div></div>
+      <div class="card"><div>Today</div><div class="big" id="tCount">–</div><div class="empty">tasks pending</div>
+        <button class="primary" onclick="genPlan()" style="margin-top:8px">Generate Plan</button></div>
+    </div>
+    <div class="card"><h3>Your plan</h3><div id="taskList"></div></div>
+  </section>
+
+  <!-- PROFILE -->
+  <section id="profile" class="hidden">
+    <div class="card"><h3>Onboarding / Profile</h3>
+      <label>Target role</label><input id="p_role" placeholder="Backend SDE">
+      <label>Target companies</label><input id="p_comp" placeholder="Microsoft, Amazon">
+      <label>Interview date</label><input id="p_date" type="date">
+      <label>Daily minutes</label><input id="p_min" type="number" value="60">
+      <label>Skill level</label><select id="p_skill"><option>beginner</option><option selected>intermediate</option><option>advanced</option></select>
+      <label>Strengths (comma-separated)</label><input id="p_str" placeholder="arrays, dp">
+      <label>Weak areas (comma-separated)</label><input id="p_weak" placeholder="graphs, trees">
+      <div style="margin-top:14px"><button class="primary" onclick="saveProfile()">Save profile</button> <span id="pMsg" class="done"></span></div>
+    </div>
+  </section>
+
+  <!-- DSA -->
+  <section id="dsa" class="hidden">
+    <div class="card"><h3>Add solved problem</h3>
+      <div class="grid">
+        <div><label>Title</label><input id="q_title"></div>
+        <div><label>URL</label><input id="q_url"></div>
+        <div><label>Difficulty</label><select id="q_diff"><option>Easy</option><option selected>Medium</option><option>Hard</option></select></div>
+        <div><label>Tags (comma-separated)</label><input id="q_tags" placeholder="graphs, bfs"></div>
+      </div>
+      <label>Notes</label><input id="q_notes">
+      <div style="margin-top:10px"><button class="primary" onclick="addProblem()">Add</button></div>
+    </div>
+    <div class="card"><h3>Solved problems</h3><div id="probList"></div></div>
+  </section>
+
+  <!-- MOCK -->
+  <section id="mock" class="hidden">
+    <div class="card"><h3>Mock interview</h3>
+      <label>Type</label><select id="m_type"><option>DSA</option><option>behavioral</option><option>project</option><option>system design basics</option></select>
+      <button class="primary" onclick="startMock()" style="margin-top:10px">Start mock</button>
+      <div id="mockBox" class="hidden" style="margin-top:14px">
+        <div class="card" style="background:#f1f5f9"><b>Q:</b> <span id="mQ"></span></div>
+        <textarea id="mAns" rows="5" placeholder="Type your answer..."></textarea>
+        <button class="primary" onclick="submitMock()" style="margin-top:8px">Submit answer</button>
+        <div id="mFb" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="chat" class="hidden">
+    <div class="card"><h3>Agent</h3>
+      <div id="chatLog" style="min-height:120px"></div>
+      <div style="margin:8px 0">
+        <span class="chip" onclick="quick('Make a plan')">Make plan</span>
+        <span class="chip" onclick="quick('What am I weak in?')">Weak topics</span>
+        <span class="chip" onclick="quick('How ready am I?')">Readiness</span>
+      </div>
+      <div style="display:flex;gap:8px"><input id="chatIn" placeholder="Ask the agent..." onkeydown="if(event.key==='Enter')send()">
+        <button class="primary" onclick="send()">Send</button></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem("token"), signup = false;
+const api = async (path, method="GET", body) => {
+  const r = await fetch("/api"+path, {method, headers:{"Content-Type":"application/json",
+    ...(token?{Authorization:"Bearer "+token}:{})}, body: body?JSON.stringify(body):undefined});
+  if(!r.ok){ const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail||"error"); }
+  return r.json();
+};
+
+function toggleAuth(){ signup=!signup;
+  $("#authTitle").textContent = signup?"Sign up":"Sign in";
+  $("#authBtn").textContent = signup?"Sign up":"Sign in";
+  $("#toggleBtn").textContent = signup?"Have an account? Sign in":"Need an account? Sign up";
+  $("#nameL").style.display=$("#name").style.display = signup?"block":"none"; }
+async function doAuth(){
+  $("#authErr").textContent="";
+  try{
+    const ep = signup?"/auth/signup":"/auth/login";
+    const b = {email:$("#email").value, password:$("#password").value, ...(signup?{name:$("#name").value}:{})};
+    const r = await api(ep,"POST",b); token=r.token; localStorage.setItem("token",token); boot();
+  }catch(e){ $("#authErr").textContent=e.message; }
+}
+function logout(){ localStorage.removeItem("token"); token=null; location.reload(); }
+function tab(t){ ["dash","profile","dsa","mock","chat"].forEach(x=>{
+  $("#"+x).classList.toggle("hidden", x!==t);
+  document.querySelector(`nav button[data-tab=${x}]`).classList.toggle("active", x===t); });
+  if(t==="dash") loadDash(); if(t==="dsa") loadProblems(); if(t==="profile") loadProfile();
+}
+
+async function boot(){
+  $("#authView").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#logoutBtn").style.display="block"; loadDash();
+}
+async function loadDash(){
+  try{
+    const r = await api("/readiness");
+    $("#rScore").textContent = r.score;
+    $("#rDetail").textContent = `${r.solved} solved · ${r.tasks_done}/${r.tasks_total} tasks`;
+    $("#rWeak").innerHTML = r.weak_topics.map(t=>`<span class="tag">${t}</span>`).join("")||'<span class="empty">–</span>';
+    const tasks = await api("/tasks");
+    const pending = tasks.filter(t=>t.status==="pending");
+    $("#tCount").textContent = pending.length;
+    $("#taskList").innerHTML = tasks.length? tasks.map(t=>`
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee">
+        <span class="${t.status==='done'?'done':''}"><span class="tag">${t.category}</span> ${t.title}
+          <small style="color:#94a3b8">${t.due_date}</small></span>
+        <span>${t.status==='done'?'✓':`<button class="ghost" onclick="markDone(${t.id})">Done</button>`}</span>
+      </div>`).join("") : '<div class="empty">Tell the agent your target role and interview timeline, then generate a plan.</div>';
+  }catch(e){ if(e.message.includes("token")) logout(); }
+}
+async function markDone(id){ await api("/tasks/"+id,"PATCH",{status:"done"}); loadDash(); }
+async function genPlan(){ try{ await api("/plans/generate","POST",{}); loadDash(); }
+  catch(e){ alert(e.message); } }
+
+async function loadProfile(){ const p = await api("/profile"); if(!p) return;
+  $("#p_role").value=p.target_role||""; $("#p_comp").value=p.target_companies||"";
+  $("#p_date").value=p.interview_date||""; $("#p_min").value=p.daily_minutes||60;
+  $("#p_skill").value=p.skill_level||"intermediate"; $("#p_str").value=p.strengths||""; $("#p_weak").value=p.weak_areas||""; }
+async function saveProfile(){
+  await api("/profile","PUT",{target_role:$("#p_role").value, target_companies:$("#p_comp").value,
+    interview_date:$("#p_date").value||null, daily_minutes:+$("#p_min").value, skill_level:$("#p_skill").value,
+    strengths:$("#p_str").value, weak_areas:$("#p_weak").value});
+  $("#pMsg").textContent="Saved ✓"; setTimeout(()=>$("#pMsg").textContent="",1500); }
+
+async function addProblem(){
+  if(!$("#q_title").value) return alert("title required");
+  await api("/problems","POST",{title:$("#q_title").value, url:$("#q_url").value,
+    difficulty:$("#q_diff").value, tags:$("#q_tags").value, notes:$("#q_notes").value});
+  ["#q_title","#q_url","#q_tags","#q_notes"].forEach(s=>$(s).value=""); loadProblems();
+}
+async function loadProblems(){ const rows = await api("/problems");
+  $("#probList").innerHTML = rows.length? `<table><tr><th>Title</th><th>Diff</th><th>Tags</th><th>Status</th></tr>`+
+    rows.map(p=>`<tr><td>${p.url?`<a href="${p.url}" target="_blank">${p.title}</a>`:p.title}</td>
+      <td>${p.difficulty}</td><td>${(p.tags||"").split(",").filter(Boolean).map(t=>`<span class="tag">${t.trim()}</span>`).join("")}</td>
+      <td>${p.status}</td></tr>`).join("")+`</table>`
+    : '<div class="empty">Add your first solved problem to unlock recommendations.</div>'; }
+
+let mockId=null;
+async function startMock(){ const r = await api("/mocks/start","POST",{type:$("#m_type").value});
+  mockId=r.session_id; $("#mQ").textContent=r.question; $("#mockBox").classList.remove("hidden");
+  $("#mAns").value=""; $("#mFb").innerHTML=""; }
+async function submitMock(){ const r = await api("/mocks/"+mockId+"/answer","POST",{answer:$("#mAns").value});
+  $("#mFb").innerHTML=`<div class="card" style="background:#f0fdf4"><b>Score: ${r.score}/10</b><br>${r.feedback}</div>`; }
+
+function addMsg(text,cls){ const d=document.createElement("div"); d.className="msg "+cls; d.textContent=text; $("#chatLog").appendChild(d); $("#chatLog").scrollTop=1e9; }
+function quick(t){ $("#chatIn").value=t; send(); }
+async function send(){ const m=$("#chatIn").value.trim(); if(!m) return; $("#chatIn").value=""; addMsg(m,"me");
+  try{ const r = await api("/agent/chat","POST",{message:m}); addMsg(r.answer,"bot");
+    if(r.createdTaskIds && r.createdTaskIds.length) loadDash();
+  }catch(e){ addMsg("Could not generate response. Try a shorter request.","bot"); } }
+
+if(token) boot(); else toggleAuth.call(), $("#nameL").style.display=$("#name").style.display="none";
+</script>
+</body>
+</html>
